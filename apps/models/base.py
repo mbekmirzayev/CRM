@@ -18,7 +18,7 @@ class UUIDBaseModel(Model):
         abstract = True
 
 
-class SlugBaseModel(UUIDBaseModel):
+class SlugBaseModel(Model):
     slug = SlugField(max_length=255, unique=True, db_index=True, editable=False)
 
     def save(self, *args, **kwargs):

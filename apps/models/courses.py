@@ -1,4 +1,4 @@
-from django.db.models import ManyToManyField, ForeignKey, CASCADE, TextChoices
+from django.db.models import ManyToManyField, ForeignKey, CASCADE, TextChoices, SET_NULL
 from django.db.models.fields import CharField, DecimalField, IntegerField, TimeField
 from django.utils.translation import gettext_lazy as _
 
@@ -6,13 +6,15 @@ from apps.models.base import CreateBaseModel, UUIDBaseModel, SlugBaseModel
 
 
 class Category(UUIDBaseModel, SlugBaseModel):
+    organization = ForeignKey('apps.Organization', CASCADE, related_name='categories')
     name = CharField(max_length=255)
 
 
 class Course(CreateBaseModel, SlugBaseModel):
-    category = ForeignKey('apps.Category', CASCADE, related_name='courses')
+    organization = ForeignKey('apps.Organization', CASCADE, related_name='courses')
+    category = ForeignKey('apps.Category', SET_NULL, null=True, blank=True, related_name='courses')
     title = CharField(max_length=255, verbose_name=_("Course title"))
-    teacher = ManyToManyField('apps.TeacherProfile',  related_name='courses')
+    teacher = ManyToManyField('apps.TeacherProfile', related_name='courses')
     duration = CharField(max_length=255, verbose_name='Duration')
     lesson_count = IntegerField(default=0)
     price = DecimalField(max_digits=10, decimal_places=2)
@@ -30,12 +32,14 @@ class Course(CreateBaseModel, SlugBaseModel):
 
 
 class Group(CreateBaseModel):
-    class GroupStatus(TextChoices):
+    class Status(TextChoices):
         ACTIVE = 'active', _('Active')
         CLOSED = 'closed', _('Closed')
 
+    organization = ForeignKey('apps.Organization', CASCADE, related_name='groups')
     course = ForeignKey('apps.Course', CASCADE, related_name='groups')
-    status = CharField(max_length=55, choices=GroupStatus.choices)
+    name = CharField(max_length=55)
+    status = CharField(max_length=55, choices=Status.choices)
     start_time = TimeField()
     end_time = TimeField()
 
@@ -50,7 +54,7 @@ class GroupSchedule(UUIDBaseModel):
         SATURDAY = 'sat', _('Saturday')
         SUNDAY = 'sun', _('Sunday')
 
-    group = ForeignKey('apps.Group', CASCADE, related_name='schedule_days')
+    group = ForeignKey('apps.Group', CASCADE, related_name='schedule')
     days = CharField(max_length=10, choices=DAYS.choices)
 
 
