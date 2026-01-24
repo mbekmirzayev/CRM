@@ -1,5 +1,5 @@
 from django.contrib.auth.models import AbstractUser
-from django.db.models import EmailField, TextChoices, ForeignKey, CASCADE, OneToOneField, SET_NULL
+from django.db.models import EmailField, TextChoices, ForeignKey, CASCADE, OneToOneField
 from django.db.models.fields import CharField, BooleanField
 from django.utils.translation import gettext_lazy as _
 
@@ -22,10 +22,8 @@ class User(AbstractUser, UUIDBaseModel):
         STUDENT = 'student', _('Student')
 
     organization = ForeignKey('apps.Organization', CASCADE, null=True, blank=True, related_name='users')
-    email = EmailField(unique=True)
+    email = EmailField(null=False, blank=False, max_length=255)
     role = CharField(max_length=20, choices=Status.choices, default=Status.STUDENT)
-    first_name = CharField(max_length=255)
-    last_name = CharField(max_length=255)
     phone = CharField(max_length=20, blank=True, unique=True)
 
     USERNAME_FIELD = 'phone'

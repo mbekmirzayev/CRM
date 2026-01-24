@@ -1,165 +1,181 @@
-from time import timezone
-
-from django.contrib.auth import authenticate, login
-from django.core import cache
-from django.core.exceptions import ValidationError
-from django.utils import timezone
-from drf_spectacular.utils import extend_schema
-from knox.views import LoginView as KnoxLoginAPIView
-from requests import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.views import APIView
-
-from apps.models import User, Device, CustomAuthToken
-from apps.serializers import RegisterSerializer, VerifyCodeSerializer, \
-    LoginSerializer, LogoutSerializer
-from apps.utils import check_verification_code, send_verification_code
-
-
-class RegisterAPIView(APIView):
-    serializer_class = RegisterSerializer
-
-    def post(self, request):
-        serializer = self.serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        email = serializer.validated_data['email']
-        password = serializer.validated_data['password']
-
-        cache.set(f"tmp_password:{email}", password, timeout=10 * 60)
-        try:
-            send_verification_code(email)
-        except ValidationError as e:
-            return Response({"message": str(e)}, status=400)
-
-        return Response({"message": "Verification code sent"}, status=status.HTTP_201_CREATED)
-
-
-# Verify code
-class VerifyCodeAPIView(APIView):
-    serializer_class = VerifyCodeSerializer
-
-    def post(self, request):
-        serializer = self.serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        email = serializer.validated_data['email']
-        code = serializer.validated_data['code']
-
-        if not check_verification_code(email, code):
-            return Response({"message": "Invalid or expired code"}, status=400)
-
-        user, created = User.objects.get_or_create(
-            email=email,
-            defaults={'is_active': True}
-        )
-
-        if created:
-            tmp_password = cache.get(f"tmp_password:{email}")
-            if not tmp_password:
-                return Response({"message": "Password not found. Retry registration"}, status=400)
-            user.set_password(tmp_password)
-            user.save()
-            cache.delete(f"tmp_password:{email}")
-        else:
-            if not user.is_active:
-                user.is_active = True
-                user.save()
-
-        return Response({
-            "message": "Email verified successfully",
-            "email": user.email
-        }, status=200)
-
-
-class CustomLoginAPIView(KnoxLoginAPIView):
-    serializer_class = LoginSerializer
-    permission_classes = (AllowAny,)
-
-    def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = authenticate(
-            email=serializer.validated_data['email'],
-            password=serializer.validated_data['password']
-        )
-
-        if not user:
-            return Response({"detail": "Xato ma'lumotlar"}, status=401)
-
-        self._user = user
-
-        # 1. Tozalash: Muddati o'tgan tokenlarni o'chirish (joy bo'shatish uchun)
-        CustomAuthToken.objects.filter(user=user, expiry__lt=timezone.now()).delete()
-
-        # 2. Limitni aniqlash (Permissionga qarab)
-        if user.is_superuser:
-            limit = 10
-        elif user.groups.filter(name='Teacher').exists():
-            limit = 3
-        else:
-            limit = 1  # O'quvchilar uchun
-
-        # 3. Limitni tekshirish
-        active_devices = Device.objects.filter(user=user, auth_token__isnull=False)
-
-        if active_devices.count() >= limit:
-            # Eng eski sessiyani o'chirib yuborish (Avtomatik overwrite)
-            oldest_device = active_devices.order_by('created_at').first()
-            if oldest_device:
-                oldest_device.delete()  # CASCADE bo'lgani uchun token ham o'chadi
-
-        # 4. Qurilmani olish yoki yaratish
-        device_id = request.data.get("device_id", "unknown_id")
-        device_type = request.data.get("device_type", "web")
-
-        # Bu foydalanuvchi uchun shu qurilmani yaratamiz yoki yangilaymiz
-        self.device_obj, _ = Device.objects.update_or_create(
-            user=user,
-            device_id=device_id,
-            defaults={
-                "type": device_type,
-                "agent": request.META.get("HTTP_USER_AGENT", "")
-            }
-        )
-
-        login(request, user)
-        return super().post(request, *args, **kwargs)
-
-    def get_post_response_data(self, request, token, instance):
-        instance.device = self.device_obj
-        instance.save(update_fields=["device"])
-        return {
-            'expiry': self.format_expiry_datetime(instance.expiry),
-            "token": token,
-            "user": {
-                "id": self._user.id,
-                "email": self._user.email,
-                "first_name": self._user.first_name,
-                "last_name": self._user.last_name
-            },
-            "device": {
-                "id": self.device_obj.id,
-                "type": self.device_obj.type,
-                "agent": self.device_obj.agent
-            }
-        }
-
-
-class CustomLogoutView(APIView):
-    permission_classes = [IsAuthenticated, ]
-
-    @extend_schema(request=LogoutSerializer)
-    def post(self, request):
-        serializer = LogoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        device_id = serializer.validated_data["device_id"]
-
-        if hasattr(device_id, 'token') and device_id.token:
-            device_id.token.delete()
-            device_id.token = None
-            device_id.save()
-
-        return Response({"detail": "Logged out successfully"})
+# from django.core.cache import cache
+# from drf_spectacular.utils import extend_schema
+# from rest_framework import status
+# from rest_framework.permissions import IsAuthenticated
+# from rest_framework.response import Response
+# from rest_framework.views import APIView
+#
+# from apps.models import User, Device, CustomAuthToken
+# from apps.serializers import (
+#     RegisterSerializer, VerifyCodeSerializer,
+#     LoginSerializer, UserModelSerializer, DeviceSerializer
+# )
+# from apps.utils import normalize_phone, send_verification_code, check_verification_code
+#
+#
+# def get_client_ip(request):
+#     """Request'dan IP addressni olish"""
+#     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+#     if x_forwarded_for:
+#         ip = x_forwarded_for.split(',')[0]
+#     else:
+#         ip = request.META.get('REMOTE_ADDR')
+#     return ip
+#
+#
+# @extend_schema(tags=['auth'])
+# class RegisterAPI(APIView):
+#     serializer_class = RegisterSerializer
+#
+#     def post(self, request):
+#         serializer = RegisterSerializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#
+#         phone = normalize_phone(serializer.validated_data['phone'])
+#         user_data = {
+#             'phone': phone,
+#             'first_name': serializer.validated_data.get('first_name'),
+#             'last_name': serializer.validated_data.get('last_name'),
+#             'password': serializer.validated_data.get('password'),
+#         }
+#
+#         cache.set(f"temp_user_{phone}", user_data, timeout=300)
+#         send_verification_code(phone)
+#
+#         return Response({
+#             "message": "Tasdiqlash kodi yuborildi",
+#             "phone": phone
+#         }, status=status.HTTP_200_OK)
+#
+#
+# @extend_schema(tags=["auth"])
+# class VerifyCodeAPI(APIView):
+#     serializer_class = VerifyCodeSerializer
+#
+#     def post(self, request):
+#         serializer = VerifyCodeSerializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#
+#         phone = normalize_phone(serializer.validated_data['phone'])
+#         code = serializer.validated_data['code']
+#         device_id = serializer.validated_data.get('device_id')
+#         device_type = serializer.validated_data.get('device_type', Device.DeviceType.WEB)
+#
+#         if not check_verification_code(phone, code):
+#             return Response({
+#                 'error': "Kod notogri yoki muddati o'tgan"
+#             }, status=status.HTTP_400_BAD_REQUEST)
+#
+#         user_data = cache.get(f"temp_user_{phone}")
+#         if not user_data:
+#             return Response({
+#                 "error": "Ro'yxatdan o'tish malumotlari topilmadi"
+#             }, status=status.HTTP_400_BAD_REQUEST)
+#
+#         try:
+#             user = User.objects.create_user(
+#                 phone=phone,
+#                 first_name=user_data.get('first_name', ''),
+#                 last_name=user_data.get('last_name', ''),
+#                 password=user_data.get('password'),
+#                 is_active=True
+#             )
+#         except Exception as e:
+#             return Response({
+#                 'error': f"Xatolik: {str(e)}"
+#             }, status=status.HTTP_400_BAD_REQUEST)
+#
+#         device = None
+#         if device_id:
+#             device, _ = Device.objects.get_or_create(
+#                 user=user,
+#                 device_id=device_id,
+#                 defaults={
+#                     'type': device_type,
+#                     'agent': request.META.get('HTTP_USER_AGENT', ''),
+#                     'is_active': True
+#                 }
+#             )
+#
+#         ip_address = get_client_ip(request)
+#         token_instance, token = CustomAuthToken.create_token(
+#             user=user,
+#             device=device,
+#             ip_address=ip_address
+#         )
+#
+#         cache.delete(f"temp_user_{phone}")
+#         cache.delete(f"verification_code_{phone}")
+#
+#         return Response({
+#             "message": "Muvaffaqiyatli ro'yxatdan o'tdingiz",
+#             'token': token,
+#             'expiry': token_instance.expiry,
+#             'user': UserModelSerializer(user).data
+#         }, status=status.HTTP_201_CREATED)
+#
+#
+# @extend_schema(tags=["auth"])
+# class LoginAPI(APIView):
+#     serializer_class = LoginSerializer
+#
+#     def post(self, request):
+#         serializer = LoginSerializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#
+#         user = serializer.validated_data['user']
+#         device_id = serializer.validated_data.get('device_id')
+#         device_type = serializer.validated_data.get('device_type', Device.DeviceType.WEB)
+#
+#         device = None
+#         if device_id:
+#             device, created = Device.objects.update_or_create(
+#                 user=user,
+#                 device_id=device_id,
+#                 defaults={
+#                     'type': device_type,
+#                     'agent': request.META.get('HTTP_USER_AGENT', ''),
+#                     'is_active': True
+#                 }
+#             )
+#
+#         ip_address = get_client_ip(request)
+#         token_instance, token = CustomAuthToken.create_token(
+#             user=user,
+#             device=device,
+#             ip_address=ip_address
+#         )
+#
+#         return Response({
+#             'token': token,
+#             'expiry': token_instance.expiry,
+#             'user': UserModelSerializer(user).data
+#         }, status=status.HTTP_200_OK)
+#
+#
+# @extend_schema(tags=["auth"])
+# class LogoutAPI(APIView):
+#     permission_classes = [IsAuthenticated]
+#
+#     def post(self, request):
+#         # ✅ Joriy tokenni o'chirish
+#         request.auth.delete()
+#
+#         return Response({
+#             'message': 'Muvaffaqiyatli chiqildi'
+#         }, status=status.HTTP_200_OK)
+#
+#
+# @extend_schema(tags=["auth"])
+# class LogoutAllAPI(APIView):
+#     permission_classes = [IsAuthenticated]
+#
+#     def post(self, request):
+#         # ✅ Userning barcha tokenlarini o'chirish
+#         deleted_count, _ = CustomAuthToken.objects.filter(user=request.user).delete()
+#
+#         return Response({
+#             'message': f'{deleted_count} ta qurilmadan chiqildi'
+#         }, status=status.HTTP_200_OK)
+#
+#

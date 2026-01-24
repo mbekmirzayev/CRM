@@ -1,3 +1,3 @@
-from apps.view.auth import CustomLogoutView, CustomLoginAPIView, RegisterAPIView, VerifyCodeAPIView
-from apps.view.views import UserProfileViewSet, OrganizationListAPIView, CourseModelViewSet, CategoryModelViewSet, \
+# from apps.view.auth import  RegisterAPI, VerifyCodeAPI, LoginAPI, LogoutAPI
+from apps.view.views import UserProfileViewSet, OrganizationModelViewSet, CourseModelViewSet, CategoryModelViewSet, \
     GroupModelViewSet, TeacherStudentList

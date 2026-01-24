@@ -4,7 +4,6 @@ import re
 from datetime import timedelta
 
 from django.core.cache import cache
-from django.core.mail import send_mail
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -24,16 +23,16 @@ def create_user_token(user, device=None, max_tokens=3):
     return token
 
 
-def get_cache_key(email):
-    return f"verify_code:{email}"
+def get_cache_key(phone):
+    return f"verify_code:{phone}"
 
 
-def get_limit_key(email):
-    return f"verify_limit:{email}"
+def get_limit_key(phone):
+    return f"verify_limit:{phone}"
 
 
-def send_verification_code(email, expired_time=300):
-    limit_key = get_limit_key(email)
+def send_verification_code(phone, expired_time=300):
+    limit_key = get_limit_key(phone)
     last_sent = cache.get(limit_key)
 
     if last_sent:
@@ -42,37 +41,21 @@ def send_verification_code(email, expired_time=300):
         if remaining > 0:
             raise ValidationError({"message": f"Please wait {remaining} seconds before requesting a new code"})
 
-    # 6 xonali kod
     code = random.randint(100000, 999999)
-    print(code)
-    # Cache-ga saqlash
-    code_key = get_cache_key(email)
+    print(f"OTP => {code}")
+    code_key = get_cache_key(phone)
     cache.set(code_key, code, timeout=expired_time)
 
     cache.set(limit_key, timezone.now(), timeout=expired_time)
 
-    # Gmailga yuborish
-    subject = "Your Verification Code"
-    message = f"Your verification code is: {code}"
-    from_email = None  # DEFAULT_FROM_EMAIL ishlaydi
 
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=from_email,
-        recipient_list=[email],
-        fail_silently=False
-    )
-
-    return code
-
-
-def check_verification_code(email, code):
-    code_key = get_cache_key(email)
+def check_verification_code(phone, code):
+    code_key = get_cache_key(phone)
     cached = cache.get(code_key)
     if cached is None:
         return False
     return cached == code
+
 
 def normalize_phone(value):
     digits = re.findall(r'\d', value)

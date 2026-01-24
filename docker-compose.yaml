@@ -3,12 +3,12 @@ services:
     build: .
     command: [ "uv", "run", "gunicorn", "root.wsgi:application", "--bind", "0.0.0.0:8000" ]
     env_file:
-      - env/.env.prod  # Umumiy sozlamalar (DEBUG, SECRET_KEY va h.k.)
-      - env/.env           # Postgres sozlamalari (POSTGRES_USER, POSTGRES_PASSWORD va h.k.)
+      - env/.env.prod  # Umumiy sozlamalar (DEBUG, SECRET_KEY va h.k.)         # Postgres sozlamalari (POSTGRES_USER, POSTGRES_PASSWORD va h.k.)
     environment:
       - DOCKER_MODE=true # Docker ichida ekanini bildirish uchun
     depends_on:
       - postgres_service
+      - redis_service
     ports:
       - "3000:8000"
 
@@ -16,11 +16,17 @@ services:
     image: postgres:alpine
     restart: always
     env_file:
-      - env/.env           # Faqat bazaga oid sozlamalar
+      - env/.env         # Faqat bazaga oid sozlamalar
     ports:
       - "5432:5432"
     volumes:
       - crm_db_data:/var/lib/postgresql/data
-
+  redis_service:
+    image: redis:alpine
+    restart: always
+    env_file:
+      - env/.env
+    ports:
+      - "6379:6379"
 volumes:
   crm_db_data:

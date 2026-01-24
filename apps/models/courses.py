@@ -1,5 +1,5 @@
-from django.db.models import ManyToManyField, ForeignKey, CASCADE, TextChoices, SET_NULL
-from django.db.models.fields import CharField, DecimalField, IntegerField, TimeField
+from django.db.models import ManyToManyField, ForeignKey, CASCADE, TextChoices, SET_NULL, UniqueConstraint, Q
+from django.db.models.fields import CharField, DecimalField, IntegerField, TimeField, DateField
 from django.utils.translation import gettext_lazy as _
 
 from apps.models.base import CreateBaseModel, UUIDBaseModel, SlugBaseModel
@@ -59,5 +59,21 @@ class GroupSchedule(UUIDBaseModel):
 
 
 class Enrollment(CreateBaseModel):
+    class Status(TextChoices):
+        ACTIVE = 'active', 'Active'
+        DROPPED = 'dropped', 'Dropped'
+        FINISHED = 'finished', 'Finished'
+
     student = ForeignKey('apps.StudentProfile', CASCADE, related_name='enrollments')
     group = ForeignKey('apps.Group', CASCADE)
+    status = CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    left_at = DateField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            UniqueConstraint(
+                fields=['student', 'group'],
+                condition=Q(status='active'),
+                name='unique_active_enrollment_per_group'
+            ),
+        ]

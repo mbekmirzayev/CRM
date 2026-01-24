@@ -1,0 +1,16 @@
+ Undocumented
+
+Response body
+
+{
+  "message": "Muvaffaqiyatli ro'yxatdan o'tdingiz",
+  "token": "0f1cbde03bc9e9872ce6063e78ac4a822d4630d6f0c948e5c55921f5fc1c8539",
+  "expiry": "2026-01-19T19:26:20.392858Z",
+  "user": {
+    "id": "bc2956ed-03c5-4917-a1c2-68eaf429d1e4",
+    "phone": "998931470019",
+    "first_name": "Botir",
+    "last_name": "Qodirov",
+    "is_active": true
+  }
+}
